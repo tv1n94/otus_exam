@@ -56,7 +56,9 @@ OTUS-exam
 **Как развернуть конфигурацию:** 
 1) На подготовленную Linux-машину клонируем данный репозиторий `git clone https://github.com/tv1n94/otus_exam.git`
 2) Открываем файл terraform.tfvars и вносим следующие значения параметров:
+
   -ah_dc - можно указать значение ams1 (Дата-центр в Амстердаме) или ash1 (Дата-центр в Америке)
+
   -ah_token - указываем значение из AH - API - Manage API access tokens
 
 3) В файле vm.tf в разделе указываем ssh_key fingerprint вашего ключа из AH - SSH KEYS
@@ -77,6 +79,7 @@ OTUS-exam
 - `localhost:6432`
 
 После первоначальной настройки необходимо настроить Trusted Domains, для этого, с хоста nomad1 вводим команду
+
 `docker exec --user www-data $(docker ps | grep nextcloud | awk '{print $1}')  php occ config:system:set trusted_domains 1 --value=*`
 
 3) После настройки можно будет пользоваться Nextcloud
@@ -91,6 +94,7 @@ OTUS-exam
 
 
 **Удаление всего стенда с конфигурацией:**
+
 Для удаления ВМ достаточно ввести команду: `terraform destroy -auto-approve`
 
 
@@ -99,15 +103,18 @@ OTUS-exam
 
 **Дополнительная информация**
 Веб-интерфейс Consul - `<IP nomad-server1>:8500`
+
 Веб-интерфейс Prometheus - `<IP nomad3>:9999`
 
 Веб-интерфейс Kiabna - `<IP nomad3>:5601`
+
 В Kibanа нужно добавить Index pattern, тогда можно будет увидеть логи Docker-контейнеров
 
 Доступ к БД:
 Ноды db1 или db2: 
 `sudo su - postgres`
 `psql -p 5433 -h /var/data/base/`
+
 Служба Postgresql будет отключена, так как она управляется Patroni
 node1: 
 `sudo su - postgres`
@@ -115,8 +122,9 @@ node1:
 
 Для управления Nextcloud через CLI напишите: `docker exec --user www-data CONTAINER_ID php occ`
 
-sudo ./occ config:system:set trusted_domains 1 --value=*
 
 Проверка тома GlusterFS
+
 Проверка состояния тома: `gluster volume status otus`
+
 Вывод информации о томе: `gluster volume info otus`
