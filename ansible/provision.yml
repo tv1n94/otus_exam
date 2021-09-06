@@ -166,13 +166,20 @@
     when: (ansible_hostname == "nomad-server2") or 
           (ansible_hostname == "nomad-server3")
 
-  - name: copyung config consul clients
+  - name: copying config consul clients
     template:
       src: consul.client.j2
       dest: "/etc/consul.d/config.json"
     when: (ansible_hostname == "nomad1") or 
           (ansible_hostname == "nomad2") or 
           (ansible_hostname == "nomad3")
+
+  - name: start consul daemon
+    systemd:
+        state: started
+        name: consul
+        enabled: yes
+    when: ansible_hostname == "nomad-server1"
 
   - name: start consul daemon
     systemd:
@@ -222,6 +229,7 @@
         state: started
         name: nomad
         enabled: yes
+
 #END Consul and Nomad
 
 #DOCKER-CE
