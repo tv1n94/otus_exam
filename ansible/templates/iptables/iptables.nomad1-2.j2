@@ -1,0 +1,64 @@
+# Delete old rules 
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+:FILTERS - [0:0]
+-F INPUT
+-F OUTPUT
+-F FILTERS
+
+#Allowing loopback trafic
+-A INPUT -i lo -j ACCEPT
+-A OUTPUT -o lo -j ACCEPT
+
+#Allowing Established Outgoing Connections
+-A OUTPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
+
+#Allowing Established and Related Incoming Connections
+-A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+#Allow NTP trafic
+-A OUTPUT -p udp -m udp -m multiport --dports 123 -m state --state NEW -j ACCEPT
+-A INPUT -m state --state NEW -p udp --dport 123 -j ACCEPT
+
+#Allow SSH connections
+-A INPUT -p tcp -m tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+-A OUTPUT -p tcp -m tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+
+#Allow NFS trafic
+-A INPUT -s 192.168.2.0/24 -p tcp -m multiport --ports 111,2000,2001,2049 -j ACCEPT
+-A INPUT -s 192.168.2.0/24 -p udp -m multiport --ports 111,2000,2002,2049 -j ACCEPT
+
+#Allow Consul trafic 
+-A INPUT -s 192.168.2.0/24 -p tcp -m multiport --ports 8600,8301,8302,8300 -j ACCEPT
+-A INPUT -s 192.168.2.0/24 -p udp -m multiport --ports 8600,8301,8302 -j ACCEPT
+-A INPUT -p tcp -m multiport --ports 8500 -j ACCEPT
+
+#Allow Nomad trafic 
+-A INPUT -s 192.168.2.0/24 -p tcp -m multiport --ports 4646,4647,4648 -j ACCEPT
+-A INPUT -s 192.168.2.0/24 -p udp -m multiport --ports 4648 -j ACCEPT
+
+#Allow Patroni and Pgbouncer trafic
+-A INPUT -s 192.168.2.0/24 -p tcp -m multiport --ports 5432,6432,8008 -j ACCEPT
+-A INPUT -s 192.168.2.0/24 -p udp -m multiport --ports 5432,6432,8008 -j ACCEPT
+
+#DHCP
+-A INPUT -p udp -m multiport --ports 68 -j ACCEPT
+
+#Fabio and Prometheus
+-A INPUT -p tcp -m multiport --ports 9999,9998 -j ACCEPT
+
+#WEB
+-A INPUT -p tcp -m multiport --ports 80 -j ACCEPT
+
+#GlusterFS
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 24007:24008 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 49152:49190 -j ACCEPT
+
+# Block all trafic
+-P INPUT DROP
+
+
+COMMIT
+#create manually

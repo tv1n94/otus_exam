@@ -1,0 +1,27 @@
+region = "russia"
+name = "{{ ansible_hostname }}"
+bind_addr = "0.0.0.0"
+data_dir = "/opt/nomad"
+
+advertise {
+   http = "{{ local_ip }}:4646"
+   rpc = "{{ local_ip }}:4647"
+   serf = "{{ local_ip }}:4648"
+}
+
+log_level = "INFO"
+
+consul {
+   address = "127.0.0.1:8500"
+   auto_advertise = true
+   server_auto_join = true
+   client_auto_join = true
+}
+
+telemetry {
+  collection_interval = "1s"
+  disable_hostname = true
+  prometheus_metrics = true
+  publish_allocation_metrics = true
+  publish_node_metrics = true
+}

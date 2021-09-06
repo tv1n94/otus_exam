@@ -1,0 +1,14 @@
+vrrp_instance keep {
+  interface enp5s0
+  state BACKUP
+  virtual_router_id 1
+  priority {{ priority }}
+  virtual_ipaddress {
+    192.168.2.100/24 dev enp5s0 label enp5s0:0
+  }
+
+  authentication {
+    auth_type PASS
+    auth_pass Otuspass!
+    }
+}

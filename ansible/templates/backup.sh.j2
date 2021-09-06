@@ -1,0 +1,6 @@
+if [[ $(consul kv get service/patroni/leader) == $(hostname) ]]
+then 
+docker exec -t $(docker ps | grep patroni | awk '{print $1}') pg_dumpall -c -h /data/patroni/ -U postgres > /mnt/backup/dump_`date +%d-%m-%Y"_"%H_%M_%S`.sql
+tar -cvf "/mnt/backup/nextcloud_$(date +%d-%m-%Y)" /mnt/gluster/nextcloud
+tar -cvf "/mnt/backup/nextcloud_config_$(date +%d-%m-%Y)" /mnt/gluster/nextcloud_config
+fi

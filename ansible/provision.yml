@@ -1,0 +1,697 @@
+- name: Base set up
+  hosts: all
+  become: yes
+  tasks:
+  - name: modify hostname
+    template:
+      src: ./templates/hostname.j2
+      dest: /etc/hostname
+      owner: root
+      group: root
+      mode: '0644'
+
+  - name: disable ipv6
+    replace:
+      dest: /etc/default/grub
+      regexp: '^GRUB_CMDLINE_LINUX="(.*)"'
+      replace: 'GRUB_CMDLINE_LINUX="\1 ipv6.disable=1"'
+      mode: '0644'
+      backup: yes
+
+  - name: Regenerate GRUB config
+    shell: grub-mkconfig -o /boot/grub/grub.cfg
+
+  - name: Install wget,unzip,vim
+    apt: 
+      name:
+        - wget
+        - unzip 
+        - vim
+        - ntp
+      state: present
+
+  - name: modify hosts files for all servers
+    copy:
+      src: ./config/hosts
+      dest: /etc/cloud/templates/hosts.debian.tmpl
+      owner: root
+      group: root
+      mode: '0644'
+
+  - name: reboot hosts
+    reboot:
+      reboot_timeout: 300
+
+#GLUSTERFS
+- name: GlusterFS
+  hosts: nomad_clients
+  become: yes
+  roles:
+    - geerlingguy.glusterfs
+
+  tasks:
+  - name: create dir for glusterfs
+    file:
+        path: /opt/gluster-volume
+        state: directory
+
+  - name: create gluster volume
+    gluster_volume:
+      state: present
+      name: otus
+      bricks: /opt/gluster-volume
+      replicas: 3
+      cluster:
+        - 192.168.2.11
+        - 192.168.2.12
+        - 192.168.2.13
+      force: yes
+    run_once: true
+    become: true
+    become_user: root
+
+  - name: start gluster volume
+    gluster_volume:
+      state: started
+      name: otus
+
+  - name: create dir for glusterfs
+    file:
+        path: /mnt/gluster
+        state: directory
+
+  - name: Mount glusterfs
+    mount:
+      path: /mnt/gluster
+      src: localhost:/otus
+      fstype: glusterfs
+      state: mounted
+
+#Nomad ans Consul
+- name: nomad
+  hosts: nomad_clients,nomad_servers
+  become: yes
+  tasks:
+  - name: add gpg Hashicorp
+    apt_key:
+      url: "https://apt.releases.hashicorp.com/gpg"
+      state: present
+
+  - name: add hashicorp repo
+    apt_repository:
+      repo: 'deb https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main'
+      state: present
+  
+  - name: install nomad
+    apt:
+      name: 
+        - nomad
+        - consul
+      state: present
+      update_cache: true
+
+  - name: stop Consul
+    systemd:
+        state: stopped
+        name: consul
+        enabled: yes
+
+  - name: stop Nomad
+    systemd:
+        state: stopped
+        name: nomad
+        enabled: yes
+  
+  - name: create dir for consul logs
+    file:
+        path: /etc/consul.d/log
+        state: directory
+        owner: consul
+        group: consul
+        mode: '0755'
+
+  - name: create volume for patroni
+    file:
+        path: /patroni
+        state: directory
+        owner: 999
+        group: 999
+        mode: '0700'  
+    when: (ansible_hostname == "nomad1") or 
+          (ansible_hostname == "nomad2") or 
+          (ansible_hostname == "nomad3")
+
+  - name: create volume for nextcloud
+    file:
+        path: "{{ item }}"
+        state: directory
+        owner: www-data
+        group: root
+        mode: '0755'
+    with_items:
+         - /mnt/gluster/nextcloud
+         - /mnt/gluster/nextcloud_config
+    when: (ansible_hostname == "nomad1")
+    
+  - name: Copying config leader_server
+    template:
+      src: consul.leader.server.j2
+      dest: /etc/consul.d/config.json
+    when: ansible_hostname == "nomad-server1"
+
+  - name: Copying config consul server
+    template:
+      src: consul.server.j2
+      dest: /etc/consul.d/config.json
+    when: (ansible_hostname == "nomad-server2") or 
+          (ansible_hostname == "nomad-server3")
+
+  - name: copyung config consul clients
+    template:
+      src: consul.client.j2
+      dest: "/etc/consul.d/config.json"
+    when: (ansible_hostname == "nomad1") or 
+          (ansible_hostname == "nomad2") or 
+          (ansible_hostname == "nomad3")
+
+  - name: start consul daemon
+    systemd:
+        state: started
+        name: consul
+        enabled: yes
+  
+  - name: copy base config nomad
+    template:
+      src: nomad.base.hcl.j2
+      dest: /etc/nomad.d/nomad.hcl
+      owner: nomad
+      group: nomad
+      mode: '0755'
+
+  - name: copy server config nomad
+    template:
+      src: nomad.server.hcl.j2
+      dest: /etc/nomad.d/server.hcl
+      owner: nomad
+      group: nomad
+      mode: '0755'
+    when: (ansible_hostname == "nomad-server1") or 
+          (ansible_hostname == "nomad-server2") or 
+          (ansible_hostname == "nomad-server3")
+
+  - name: copy client config nomad
+    template:
+      src: nomad.client.hcl.j2
+      dest: /etc/nomad.d/client.hcl
+      owner: nomad
+      group: nomad
+      mode: '0755'
+    when: (ansible_hostname == "nomad1") or 
+          (ansible_hostname == "nomad2") or 
+          (ansible_hostname == "nomad3")
+  
+  - name: start nomad daemon
+    systemd:
+        state: started
+        name: nomad
+        enabled: yes
+    when: ansible_hostname == "nomad-server1"
+
+  - name: start nomad daemon
+    systemd:
+        state: started
+        name: nomad
+        enabled: yes
+#END Consul and Nomad
+
+#DOCKER-CE
+- name: docker
+  hosts: nomad_clients
+  become: yes
+  tasks:
+  - name: delete docker.io
+    apt:
+      name: 
+      - docker.io
+      state: absent
+      purge: true
+
+  - name: install docker
+    apt:
+      name: 
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      state: present
+
+  - name: add gpg docker
+    apt_key:
+      url: "https://download.docker.com/linux/ubuntu/gpg"
+      state: present
+
+  - name: add docker repo
+    apt_repository:
+      repo: 'deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable'
+      state: present
+  
+  - name: install docker
+    apt:
+      name: 
+        - docker-ce
+      state: present
+      update_cache: true
+
+  - name: adding user nomad to docker group
+    user:
+      name: nomad
+      groups: docker
+      append: yes
+#END DOCKER-CE
+
+#KEEPALIVED
+- name: create volume for patroni
+  hosts: nomad_servers
+  become: yes
+  tasks:
+  - name: install keepalived
+    apt:
+      name: keepalived
+      state: present
+  
+  - name: copy keepalived.conf
+    template:
+      src: keepalived.conf.j2
+      dest: /etc/keepalived/keepalived.conf
+      owner: root
+      group: root
+      mode: 0644
+
+  - name: updating net.ipv4.ip_nonlocal_bind parameter
+    lineinfile:
+      path: /etc/sysctl.conf
+      line: "net.ipv4.ip_nonlocal_bind=1"
+
+  - name: updating net.ipv4.ip_forward parameter
+    lineinfile:
+      path: /etc/sysctl.conf
+      line: "net.ipv4.ip_forward = 1"
+
+  - name: updating sysctl parameters
+    shell: sysctl -p
+
+  - name: enable keepalived to be started at boot
+    service: 
+      name: keepalived
+      enabled: yes
+      state: restarted
+#END KEEPALIVED
+
+#START NOMAD JOBS
+- name: pre-install patroni
+  hosts: nomad_clients
+  become: yes
+  tasks:
+  - name: install postgresql-client
+    apt:
+      name: postgresql-client
+      state: present
+
+- name: create volume for patroni
+  hosts: nomad_servers,nomad_clients
+  become: yes
+  tasks:
+  - name: create dir for jobs
+    file:
+        path: /root/nomad
+        state: directory
+
+  - name: copy nomad jobs
+    copy: 
+      src: "{{ item }}"
+      dest: /home/adminroot/
+    with_items:
+          - ./templates/patroni/patroni1.hcl
+          - ./templates/patroni/patroni2.hcl
+          - ./templates/pgbouncer/pgbouncer.hcl
+          #- ./templates/pgbouncer/pgbouncer2.hcl
+          - ./templates/nextcloud/nextcloud1.hcl
+          - ./templates/nextcloud/nextcloud2.hcl
+          - ./templates/prometheus/alertmanager.hcl
+          - ./templates/prometheus/fabio.hcl
+          - ./templates/prometheus/prometheus.hcl
+          - ./templates/balancer_ex/lb.hcl
+          - ./templates/elk/elasticsearch.hcl
+          - ./templates/elk/kibana.hcl
+          - ./templates/elk/logstash.hcl
+
+  - name: start nomad job patroni1
+    shell: nomad run /home/adminroot/patroni1.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true 
+
+  - name: start nomad job patroni2
+    shell: nomad run /home/adminroot/patroni2.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true 
+  
+  - name: install libpq-dev for postgres
+    apt:
+      name: 
+        - libpq-dev
+        - python3-pip
+      state: present
+    when: (ansible_hostname == "nomad1") or 
+          (ansible_hostname == "nomad2")
+
+  - name: install psycopg2 for edit PG-bases
+    shell: pip3 install Psycopg2
+    ignore_errors: true
+    when: (ansible_hostname == "nomad1") or 
+          (ansible_hostname == "nomad2")
+
+  - name: Create Nexcloud DB
+    postgresql_db:
+      login_host: 192.168.2.11
+      login_user: postgres
+      login_password: postgres
+      port: 5432
+      name: nextcloud
+      encoding: UTF-8
+      template: template0
+      state: present
+    when: ansible_hostname == "nomad1"
+    
+  - name: Create user nextcloud
+    postgresql_user:
+      login_user: postgres
+      login_password: postgres
+      login_host: 192.168.2.11
+      name: nextcloud
+      password: nextcloud
+      db: nextcloud
+      priv: "ALL"
+    when: ansible_hostname == "nomad1"
+
+  - name: start nomad job pgbouncer
+    shell: nomad run /home/adminroot/pgbouncer.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true
+  
+  - name: start nomad job nextcloud1
+    shell: nomad run /home/adminroot/nextcloud1.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true
+
+  - name: start nomad job fabio
+    shell: nomad run /home/adminroot/fabio.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true
+
+  - name: start nomad job alermanager
+    shell: nomad run /home/adminroot/alertmanager.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true
+
+  - name: start nomad job prometheus
+    shell: nomad run /home/adminroot/prometheus.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true
+  
+  - name: start nomad job nextcloud2
+    shell: nomad run /home/adminroot/nextcloud2.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true
+
+  #- name: add * trusted domains
+  #  shell: "docker exec --user www-data $(docker ps | grep nextcloud | awk '{print $1}')  php occ config:system:set trusted_domains 1 --value=*"
+  #  when: ansible_hostname == "nomad1"
+  #  ignore_errors: true
+
+  - name: start nomad job load balancer
+    shell: nomad run /home/adminroot/lb.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true
+
+  - name: start nomad job elasticsearch
+    shell: nomad run /home/adminroot/elasticsearch.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true
+
+  - name: start nomad job kibana
+    shell: nomad run /home/adminroot/kibana.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true
+
+  - name: start nomad job logstash
+    shell: nomad run /home/adminroot/logstash.hcl
+    when: ansible_hostname == "nomad-server1"
+    ignore_errors: true
+#END NOMAD JOBS
+
+#FILEBEAT
+- name: Filebeat
+  hosts: nomad_clients
+  become: yes
+  tasks:
+  - name: add gpg Hashicorp
+    apt_key:
+      url: "https://artifacts.elastic.co/GPG-KEY-elasticsearch"
+      state: present
+
+  - name: add hashicorp repo
+    apt_repository:
+      repo: 'deb https://artifacts.elastic.co/packages/7.x/apt stable main'
+      state: present
+  
+  - name: install filebeat
+    apt:
+      name: 
+        - apt-transport-https
+        - filebeat
+      state: present
+      update_cache: true
+
+  - name: modify filebeat.yml for all servers
+    template:
+      src: filebeat.yml.j2
+      dest: /etc/filebeat/filebeat.yml
+      owner: root
+      group: root
+      mode: '0644'
+
+  - name: start filebeat daemon
+    systemd:
+        state: restarted
+        name: filebeat
+        enabled: yes
+#END FILEBEAT
+
+#BACKUP
+- name: backup
+  hosts: backup1
+  become: yes
+  tasks:
+  - name: parted sdb
+    parted:
+      device: /dev/sdb
+      number: 2
+      flags: [ lvm ]
+      state: present
+    ignore_errors: true 
+
+  - name: create filesystem
+    filesystem:
+      fstype: ext4
+      dev: /dev/sdb1
+    ignore_errors: true 
+
+  - name: mount disk sdb 
+    mount:
+      fstype: ext4
+      src: /dev/sdb1
+      path: /backup
+      state: mounted
+    ignore_errors: true 
+
+  - name: install nfs server
+    apt: 
+      name: nfs-kernel-server
+      state: present
+      update_cache: true
+
+  - name: modify file exports 
+    template:
+      src: exports.j2
+      dest: /etc/exports
+      owner: root
+      group: root
+      mode: '0644'
+
+  - name: restart nfs-server daemon
+    systemd:
+      state: restarted
+      name: nfs-server
+      enabled: yes
+
+- name: set up nfs-client 
+  hosts: nomad_clients
+  become: yes
+  tasks:
+  - name: install nfs-common
+    apt:
+      name: nfs-common
+      state: present
+      update_cache: true
+
+  - name: create backup dir
+    file:
+      path: /mnt/backup
+      state: directory
+
+  - name: mount /backup folder
+    mount:
+      fstype: nfs
+      opts: defaults
+      state: mounted
+      src: 192.168.2.30:/backup
+      path: /mnt/backup
+
+  - name: create backup.sh file
+    template:
+      src: backup.sh.j2
+      dest: /root/backup.sh
+      owner: root
+      group: root
+      mode: '0744'
+
+  - name: Creates a cron file under /etc/cron.d
+    cron:
+      name: backup
+      minute: "0"
+      hour: "21"
+      user: root
+      job: "/root/backup.sh"
+      cron_file: backup
+#END BACKUP
+  
+#IPTABLES
+- name: iptables
+  hosts: all
+  become: yes
+  tasks:
+  - name: install iptables
+    apt: 
+      name: 
+        - iptables
+        - iptables-persistent
+      state: present
+      update_cache: true
+
+  - name: set up rpc port
+    lineinfile:
+      path: /etc/default/nfs-kernel-server
+      regexp: '^RPCMOUNTDOPTS='
+      line: 'RPCMOUNTDOPTS="--manage-gids -p 2000"'
+    when: (ansible_hostname == "backup1")
+
+  - name: restart nfs-server
+    service: 
+      name: nfs-server
+      enabled: yes
+      state: restarted
+    when: (ansible_hostname == "backup1")
+
+  - name: copy 30-nfs-ports.conf
+    copy:
+      src: ./templates/iptables/30-nfs-ports.conf
+      dest: /etc/sysctl.d/30-nfs-ports.conf
+      owner: root
+      group: root
+      mode: '0644'
+    when: (ansible_hostname == "nomad1") or 
+          (ansible_hostname == "nomad2") or 
+          (ansible_hostname == "nomad3") or
+          (ansible_hostname == "backup1")
+
+  - name: apply nfs-ports settings
+    shell: sysctl --system
+
+  - name: set up iptables rules in Backup1 server
+    copy:
+      src: ./templates/iptables/iptables.backup.j2
+      dest: /etc/iptables_rules.ipv4
+      owner: root
+      group: root
+      mode: '0644'
+    when: (ansible_hostname == "backup1")
+
+  - name: apply rules iptables in backup
+    shell: iptables-restore -n /etc/iptables_rules.ipv4
+    when: (ansible_hostname == "backup1")
+
+  - name: apply rules iptables in backup
+    shell: iptables-save > /etc/iptables/rules.v4
+    when: (ansible_hostname == "backup1")
+
+  - name: set up iptables rules on nomad-servers
+    copy:
+      src: ./templates/iptables/iptables.nomad-servers.j2
+      dest: /etc/iptables_rules.ipv4
+      owner: root
+      group: root
+      mode: '0644'
+    when: (ansible_hostname == "nomad-server1") or
+          (ansible_hostname == "nomad-server2") or 
+          (ansible_hostname == "nomad-server3")
+  
+  - name: apply rules iptables in backup
+    shell: iptables-restore -n /etc/iptables_rules.ipv4
+    when: (ansible_hostname == "nomad-server1") or
+          (ansible_hostname == "nomad-server2") or 
+          (ansible_hostname == "nomad-server3")
+
+  - name: apply rules iptables in backup
+    shell: iptables-save > /etc/iptables/rules.v4
+    when: (ansible_hostname == "nomad-server1") or
+          (ansible_hostname == "nomad-server2") or 
+          (ansible_hostname == "nomad-server3")
+
+  - name: set up iptables rules on nomad1,nomad2
+    copy:
+      src: ./templates/iptables/iptables.nomad1-2.j2
+      dest: /etc/iptables_rules.ipv4
+      owner: root
+      group: root
+      mode: '0644'
+    when: (ansible_hostname == "nomad1") or
+          (ansible_hostname == "nomad2") 
+  
+  - name: apply rules iptables in backup
+    shell: iptables-restore -n /etc/iptables_rules.ipv4
+    when: (ansible_hostname == "nomad1") or
+          (ansible_hostname == "nomad2") 
+
+  - name: apply rules iptables in backup
+    shell: iptables-save > /etc/iptables/rules.v4
+    when: (ansible_hostname == "nomad1") or
+          (ansible_hostname == "nomad2") 
+
+  - name: set up iptables rules on nomad3
+    copy:
+      src: ./templates/iptables/iptables.nomad3.j2
+      dest: /etc/iptables_rules.ipv4
+      owner: root
+      group: root
+      mode: '0644'
+    when: (ansible_hostname == "nomad3") 
+  
+  - name: apply rules iptables in backup
+    shell: iptables-restore -n /etc/iptables_rules.ipv4
+    when: (ansible_hostname == "nomad3")  
+
+  - name: apply rules iptables in backup
+    shell: iptables-save > /etc/iptables/rules.v4
+    when: (ansible_hostname == "nomad3")  
+
+#END IPTABLES

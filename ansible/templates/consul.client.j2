@@ -1,0 +1,16 @@
+{
+    "server": false,
+    "advertise_addr": "{{ local_ip }}",
+    "bind_addr": "{{ local_ip }}",
+    "datacenter": "DC1",
+    "data_dir": "/var/consul",
+    "encrypt": "eu32w47slp3aquEUgaetIqo3KKm8FQUgW+5nEeB8W60=",
+    "log_level": "INFO",
+    "enable_syslog": true,
+    "leave_on_terminate": true,
+    "start_join": [
+        "nomad-server1",
+        "nomad-server2",
+        "nomad-server3"
+    ]
+}

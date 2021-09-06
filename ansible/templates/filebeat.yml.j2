@@ -1,0 +1,15 @@
+filebeat.inputs:
+- input_type: log
+  #enabled: true
+  paths:
+  - /var/lib/docker/containers/*/*.log
+  fields: 
+    service: docker
+
+output.logstash:
+  hosts: ["192.168.2.13:5044"]
+
+xpack.monitoring:
+  enabled: true
+  elasticsearch:
+    hosts: ["http://192.168.2.13:9200"]

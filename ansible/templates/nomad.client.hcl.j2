@@ -1,0 +1,27 @@
+# Datacenter to register the client
+datacenter = "dc1"
+
+client {
+  # Enable client mode for the local agent
+  enabled = true
+  host_network "int" {
+    interface = "enp5s0"
+  }
+
+  host_volume "patroni" {
+    path = "/patroni"
+    read_only = false
+  }
+
+  host_volume "nextcloud" {
+    path = "/mnt/gluster/nextcloud"
+    read_only = false
+  }
+
+  host_volume "nextcloud_config" {
+    path = "/mnt/gluster/nextcloud_config"
+    read_only = false
+  }
+
+  network_interface = "enp5s0"
+}

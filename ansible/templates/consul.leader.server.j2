@@ -1,0 +1,30 @@
+{
+     "advertise_addr": "{{ local_ip }}",
+     "bind_addr": "{{ local_ip }}",
+     "bootstrap_expect": 1,
+     "client_addr": "0.0.0.0",
+     "datacenter": "DC1",
+     "data_dir": "/opt/consul",
+     "domain": "consul.lan",
+     "enable_local_script_checks": true,
+     "enable_script_checks": true,
+     "enable_syslog": true,
+     "encrypt": "eu32w47slp3aquEUgaetIqo3KKm8FQUgW+5nEeB8W60=",
+     "leave_on_terminate": true,
+     "rejoin_after_leave": true,
+     "retry_join": [
+         "nomad-server1",
+         "nomad-server2",
+         "nomad-server3"
+    ],
+     "server": true,
+     "start_join": [
+         "nomad-server1",
+         "nomad-server2",
+         "nomad-server3"
+    ],
+     "log_file": "/etc/consul.d/log/consul.log",
+     "log_level": "DEBUG",
+     "log_rotate_duration": "24h",
+     "ui": true
+}
