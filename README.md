@@ -1,5 +1,5 @@
 OTUS-exam
-![Image alt](https://github.com/{tv1n94}/otus_exam/raw/otus_exam.jpg)
+![Image alt](https://github.com/tv1n94/otus_exam/blob/master/otus_exam.jpg)
 
 Данная конфигурация позволяет развернуть комплекс из 7 виртуальных машин на Ubuntu 20 в провайдере Advanced Hosting (AH):
 
