@@ -10,6 +10,12 @@
       group: root
       mode: '0644'
 
+  - name: enable keepalived to be started at boot
+    service: 
+      name: ufw
+      enabled: no
+      state: stopped
+
   - name: disable ipv6
     replace:
       dest: /etc/default/grub

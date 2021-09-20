@@ -1,5 +1,5 @@
 ah_dc                         = "ams1"
-ah_token                      = "YOUR TOKEN"
+ah_token                      = "YOUR_AH_TOKEN"
 ah_machine_type               = "start-xs"
 ah_machine_type_nomad_client  = "smart-xs"
 ah_image_type                 = "ubuntu-20_04-x64"
